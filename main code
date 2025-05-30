@@ -1,0 +1,211 @@
+import turtle
+import random
+import time
+
+# ==== CONFIGURATION ====
+SCREEN_WIDTH = 600
+SCREEN_HEIGHT = 600
+NUM_INVADERS = 8
+INVADER_SPEED = 2  # Slower invaders
+PLAYER_SPEED = 15
+BULLET_SPEED = 10  # Slower bullets
+BULLET_COOLDOWN = 0.3
+PLAYER_LIVES = 3
+
+# ==== SCREEN SETUP ====
+screen = turtle.Screen()
+screen.title("Space Invaders - Continuous Movement")
+screen.bgcolor("black")
+screen.setup(width=SCREEN_WIDTH, height=SCREEN_HEIGHT)
+screen.tracer(0)
+
+# ==== SCORE & STATUS ====
+score = 0
+lives = PLAYER_LIVES
+last_shot_time = 0
+game_active = True
+
+# ==== HUD ====
+hud = turtle.Turtle()
+hud.color("white")
+hud.penup()
+hud.hideturtle()
+hud.goto(-SCREEN_WIDTH//2 + 10, SCREEN_HEIGHT//2 - 30)
+def update_hud():
+    hud.clear()
+    hud.write(f"Score: {score}  Lives: {lives}", font=("Courier", 14, "normal"))
+
+update_hud()
+
+# ==== PLAYER ====
+player = turtle.Turtle()
+player.shape("arrow")
+player.color("cyan")
+player.penup()
+player.setheading(90)
+player.goto(0, -SCREEN_HEIGHT//2 + 60)
+
+# ==== INVADERS ====
+invaders = []
+invader_speed = INVADER_SPEED
+
+for _ in range(NUM_INVADERS):
+    invader = turtle.Turtle()
+    invader.shape("square")
+    invader.color("red")
+    invader.penup()
+    invader.goto(random.randint(-250, 250), random.randint(100, 250))
+    invaders.append(invader)
+
+# ==== BULLETS ====
+bullets = []
+
+def fire_bullet():
+    global last_shot_time
+    now = time.time()
+    if now - last_shot_time >= BULLET_COOLDOWN and game_active:
+        last_shot_time = now
+        bullet = turtle.Turtle()
+        bullet.shape("triangle")
+        bullet.color("yellow")
+        bullet.penup()
+        bullet.setheading(90)
+        bullet.shapesize(0.4, 0.4)
+        bullet.goto(player.xcor(), player.ycor() + 10)
+        bullets.append(bullet)
+
+# ==== PLAYER MOVEMENT FLAGS ====
+a_down = False
+d_down = False
+
+def press_a():
+    global a_down
+    a_down = True
+
+def release_a():
+    global a_down
+    a_down = False
+
+def press_d():
+    global d_down
+    d_down = True
+
+def release_d():
+    global d_down
+    d_down = False
+
+screen.listen()
+screen.onkeypress(press_a, "a")
+screen.onkeyrelease(release_a, "a")
+screen.onkeypress(press_d, "d")
+screen.onkeyrelease(release_d, "d")
+screen.onkeypress(fire_bullet, "w")
+
+# ==== GAME OVER SCREEN ====
+def game_over_screen():
+    global game_active
+    game_active = False
+    for inv in invaders:
+        inv.hideturtle()
+    for b in bullets:
+        b.hideturtle()
+    player.hideturtle()
+    
+    over = turtle.Turtle()
+    over.color("white")
+    over.penup()
+    over.hideturtle()
+    over.goto(0, 0)
+    over.write("GAME OVER\nPress R to Restart", align="center", font=("Courier", 20, "bold"))
+
+def restart_game():
+    global score, lives, bullets, game_active, invader_speed
+
+    if game_active:
+        return  # Don't restart mid-game
+
+    score = 0
+    lives = PLAYER_LIVES
+    game_active = True
+    invader_speed = INVADER_SPEED
+    player.showturtle()
+    player.goto(0, -SCREEN_HEIGHT//2 + 60)
+    bullets.clear()
+
+    for inv in invaders:
+        inv.showturtle()
+        inv.goto(random.randint(-250, 250), random.randint(100, 250))
+
+    update_hud()
+    game_loop()
+
+screen.onkeypress(restart_game, "r")
+
+# ==== MAIN GAME LOOP ====
+def game_loop():
+    global invader_speed, score, lives, game_active
+
+    if not game_active:
+        return
+
+    # Move player continuously if keys are held down
+    if a_down:
+        x = player.xcor() - PLAYER_SPEED
+        if x < -SCREEN_WIDTH//2 + 40:
+            x = -SCREEN_WIDTH//2 + 40
+        player.setx(x)
+    if d_down:
+        x = player.xcor() + PLAYER_SPEED
+        if x > SCREEN_WIDTH//2 - 40:
+            x = SCREEN_WIDTH//2 - 40
+        player.setx(x)
+
+    # Update bullet positions
+    for bullet in bullets[:]:
+        bullet.sety(bullet.ycor() + BULLET_SPEED)
+        if bullet.ycor() > SCREEN_HEIGHT//2 - 20:
+            bullet.hideturtle()
+            bullets.remove(bullet)
+
+    # Update invaders
+    for invader in invaders:
+        invader.setx(invader.xcor() + invader_speed)
+
+        if invader.xcor() > SCREEN_WIDTH//2 - 40 or invader.xcor() < -SCREEN_WIDTH//2 + 40:
+            invader_speed *= -1
+            for i in invaders:
+                i.sety(i.ycor() - 25)
+
+        # Check collision with player
+        if invader.distance(player) < 20:
+            lives = 0
+            update_hud()
+            game_over_screen()
+            return
+
+        # Check collision with bullet
+        for bullet in bullets[:]:
+            if invader.distance(bullet) < 15:
+                bullet.hideturtle()
+                bullets.remove(bullet)
+                x = random.randint(-250, 250)
+                y = random.randint(100, 250)
+                invader.goto(x, y)
+                score += 10
+                update_hud()
+
+    for inv in invaders:
+        if inv.ycor() < -SCREEN_HEIGHT//2 + 60:
+            lives -= 1
+            update_hud()
+            inv.goto(random.randint(-250, 250), random.randint(100, 250))
+            if lives <= 0:
+                game_over_screen()
+                return
+
+    screen.update()
+    screen.ontimer(game_loop, 40)  # ~25 FPS
+
+# ==== START GAME ====
+game_loop()
+screen.mainloop()
