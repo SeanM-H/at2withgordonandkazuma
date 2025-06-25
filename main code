@@ -8,7 +8,7 @@ import os
 SCREEN_WIDTH = 600  # Width of game window
 SCREEN_HEIGHT = 600  # Height of game window
 PLAYER_SPEED = 5  # How fast the player moves left/right
-BULLET_SPEED = 7  # How fast bullets move upward
+BULLET_SPEED = 15  # How fast bullets move upward
 INVADER_SPEED_BASE = 2  # Base speed of invaders, increases by level
 BULLET_COOLDOWN = 0.3  # Minimum time between shots (seconds)
 PLAYER_LIVES = 3  # Lives per level
