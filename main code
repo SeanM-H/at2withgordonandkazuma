@@ -1,7 +1,7 @@
 import turtle
 import random
 import time
-＃note
+
 # ==== CONFIGURATION ====
 SCREEN_WIDTH = 600
 SCREEN_HEIGHT = 600
