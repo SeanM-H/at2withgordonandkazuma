@@ -35,6 +35,35 @@ screen = None
 SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
 SCREEN_HEIGHT = DEFAULT_SCREEN_HEIGHT
 
+# ==== BARRIER CLASS ====
+class Barrier:
+    def __init__(self, x, y):
+        # The barrier's rectangular area and health count
+        self.rect = pygame.Rect(x, y, 60, 20)
+        self.health = 3  # barriers take 3 hits to break
+
+        # TODO: Load barrier image here if you have one
+        # Example:
+        # self.image = pygame.image.load("barrier.png").convert_alpha()
+
+    def draw(self, surface):
+        # If you have an image, you could blit it here instead of drawing rects:
+        # surface.blit(self.image, self.rect)
+
+        # Color changes with health
+        if self.health == 3:
+            color = (0, 200, 0)  # green
+        elif self.health == 2:
+            color = (200, 200, 0)  # yellow
+        else:
+            color = (200, 0, 0)  # red
+        pygame.draw.rect(surface, color, self.rect)
+
+    def hit(self):
+        # Reduce health by 1, return True if destroyed
+        self.health -= 1
+        return self.health <= 0
+
 # ==== LOAD SPRITES ====
 def load_sprites():
     try:
@@ -42,7 +71,12 @@ def load_sprites():
         invader_img = pygame.image.load("invader.png").convert_alpha()
         bullet_img = pygame.image.load("bullet.png").convert_alpha()
         heart_img = pygame.image.load("heart.png").convert_alpha()
+
+        # TODO: You can also load a barrier image here for use in Barrier class
+        # barrier_img = pygame.image.load("barrier.png").convert_alpha()
+
     except:
+        # fallback plain shapes if images missing
         player_img = pygame.Surface((40, 20))
         player_img.fill((0, 255, 255))
         invader_img = pygame.Surface((30, 30))
@@ -51,7 +85,12 @@ def load_sprites():
         bullet_img.fill((255, 255, 0))
         heart_img = pygame.Surface((20, 20))
         heart_img.fill((255, 0, 0))
+
+        # barrier_img = pygame.Surface((60, 20))
+        # barrier_img.fill((0, 200, 0))
+
     return player_img, invader_img, bullet_img, heart_img
+    # return player_img, invader_img, bullet_img, heart_img, barrier_img  # if you add barrier_img
 
 player_img, invader_img, bullet_img, heart_img = load_sprites()
 
@@ -117,6 +156,7 @@ def run_endless_mode(difficulty):
     player = player_img.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
     bullets = []
     invaders = []
+    barriers = []  # List to hold barrier objects
     lives = PLAYER_LIVES
     score = 0
     last_shot_time = 0
@@ -132,6 +172,12 @@ def run_endless_mode(difficulty):
         spawn_interval = 1.0
     else:
         spawn_interval = 0.5
+
+    # Create 3 barriers spaced evenly across near bottom of screen
+    barrier_y = SCREEN_HEIGHT - 150
+    spacing = SCREEN_WIDTH // 4
+    for i in range(1, 4):
+        barriers.append(Barrier(i * spacing - 30, barrier_y))
 
     bullet_pattern = 1
     game_active = True
@@ -193,14 +239,34 @@ def run_endless_mode(difficulty):
             flash_text = "+1 Life!"
             flash_timer = HEALTH_FLASH_TIME
 
+        # Move bullets up, remove if off screen
         for b in bullets[:]:
             b.y -= BULLET_SPEED
             if b.bottom < 0:
                 bullets.remove(b)
 
+        # Move invaders down, check collision with player
         for inv in invaders[:]:
             inv.y += 2
-            if inv.colliderect(player):
+
+            # Check collision with barriers first
+            hit_barrier = None
+            for barrier in barriers:
+                if inv.colliderect(barrier.rect):
+                    hit_barrier = barrier
+                    break
+
+            if hit_barrier:
+                # Invader hits barrier: reduce barrier health and remove invader
+                if hit_barrier.hit():
+                    barriers.remove(hit_barrier)
+                invaders.remove(inv)
+                # Optional: small shake effect
+                shake_frames = SHAKE_DURATION
+                flash_text = "Barrier Hit!"
+                flash_timer = HEALTH_FLASH_TIME
+
+            elif inv.colliderect(player):
                 lives -= 1
                 invaders.remove(inv)
                 shake_frames = SHAKE_DURATION
@@ -209,6 +275,7 @@ def run_endless_mode(difficulty):
             elif inv.top > SCREEN_HEIGHT:
                 invaders.remove(inv)
 
+        # Check bullet hits on invaders
         for inv in invaders[:]:
             for b in bullets[:]:
                 if inv.colliderect(b):
@@ -217,20 +284,28 @@ def run_endless_mode(difficulty):
                     score += 10
                     break
 
+        # *** Removed bullet-barrier collision ***
+        # Bullets pass through barriers, so no collision here.
+
         if lives <= 0:
             game_over_screen(score)
             return
 
+        # Draw all game objects
         temp_surf.blit(player_img, player)
         for inv in invaders:
             temp_surf.blit(invader_img, inv)
         for b in bullets:
             temp_surf.blit(bullet_img, b)
+        for barrier in barriers:
+            barrier.draw(temp_surf)  # draw barriers
 
+        # HUD: difficulty and score
         hud = font.render(f"{difficulty} Mode  Score: {score}", True, WHITE)
         temp_surf.blit(hud, (10, 10))
         draw_hearts(lives)
 
+        # Flash messages like "Ouch!" or "+1 Life!"
         if flash_timer > 0:
             flash_surface = font.render(flash_text, True, RED)
             temp_surf.blit(flash_surface, (SCREEN_WIDTH // 2 - flash_surface.get_width() // 2, 80))
@@ -239,8 +314,6 @@ def run_endless_mode(difficulty):
         screen.blit(temp_surf, (offset_x, offset_y))
         pygame.display.flip()
         clock.tick(60)
-
-# ==== DISPLAY MODE SELECTION MENU WITH WINDOW SIZE INPUT ====
 
 def get_text_input(prompt, default_text="", max_length=5):
     """Simple input box to get numbers for width/height."""
@@ -365,5 +438,5 @@ def difficulty_menu():
         pygame.display.flip()
         clock.tick(60)
 
+# Start the game by showing display mode menu
 display_mode_menu()
-
