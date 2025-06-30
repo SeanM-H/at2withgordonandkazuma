@@ -17,6 +17,16 @@ MAX_LIVES = PLAYER_LIVES
 SHAKE_DURATION = 5  # frames
 HEALTH_FLASH_TIME = 15  # frames
 EXTRA_LIFE_SCORE = 1000
+# ==== CONFIGURATION ====
+SCREEN_WIDTH = 600
+SCREEN_HEIGHT = 600
+PLAYER_SPEED = 5
+BULLET_SPEED = 15
+INVADER_SPEED_BASE = 2
+BULLET_COOLDOWN = 0.3
+PLAYER_LIVES = 3
+LEVELS = 5
+PROGRESS_FILE = "progress.json"
 
 # ==== COLORS ====
 WHITE = (255, 255, 255)
@@ -27,36 +37,30 @@ RED = (255, 0, 0)
 DARK_RED = (100, 0, 0)
 
 pygame.init()
-font = pygame.font.SysFont("Courier", 24)
-clock = pygame.time.Clock()
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))  # Create game window
+pygame.display.set_caption("Space Invaders - Level Select")
+clock = pygame.time.Clock()  # To control FPS
+font = pygame.font.SysFont("Courier", 24)  # Font for text
 
-# ==== Global vars for screen (will be set later) ====
-screen = None
-SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
-SCREEN_HEIGHT = DEFAULT_SCREEN_HEIGHT
+# ==== PLACEHOLDER GRAPHICS ====
+# These are simple colored shapes; replace with real images if desired
+player_img = pygame.Surface((40, 20))
+player_img.fill((0, 255, 255))  # Cyan for player
 
-# ==== LOAD SPRITES ====
-def load_sprites():
-    try:
-        player_img = pygame.image.load("player_ship.png").convert_alpha()
-        invader_img = pygame.image.load("invader.png").convert_alpha()
-        bullet_img = pygame.image.load("bullet.png").convert_alpha()
-        heart_img = pygame.image.load("heart.png").convert_alpha()
-    except:
-        player_img = pygame.Surface((40, 20))
-        player_img.fill((0, 255, 255))
-        invader_img = pygame.Surface((30, 30))
-        invader_img.fill((255, 0, 0))
-        bullet_img = pygame.Surface((6, 10))
-        bullet_img.fill((255, 255, 0))
-        heart_img = pygame.Surface((20, 20))
-        heart_img.fill((255, 0, 0))
-    return player_img, invader_img, bullet_img, heart_img
+invader_img = pygame.Surface((30, 30))
+invader_img.fill((255, 0, 0))  # Red for invaders
 
-player_img, invader_img, bullet_img, heart_img = load_sprites()
+bullet_img = pygame.Surface((6, 10))
+bullet_img.fill((255, 255, 0))  # Yellow for bullets
 
-# ==== LOAD PROGRESS ====
-PROGRESS_FILE = "progress.json"
+# ==== LOAD SOUNDS / MUSIC PLACEHOLDER ====
+# Uncomment + load real files when ready
+# shoot_sound = pygame.mixer.Sound("shoot.wav")
+# invader_hit_sound = pygame.mixer.Sound("invader_hit.wav")
+# pygame.mixer.music.load("background_music.mp3")
+# pygame.mixer.music.play(-1)  # Loop background music forever
+
+# ==== LOAD OR INIT PROGRESS ====
 def load_progress():
     if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, 'r') as f:
@@ -70,6 +74,7 @@ def save_progress(unlocked_levels, scores):
 
 unlocked_levels, level_scores = load_progress()
 
+# ==== BUTTON CLASS FOR MENU ====
 class Button:
     def __init__(self, rect, text, enabled=True):
         self.rect = pygame.Rect(rect)
@@ -86,10 +91,143 @@ class Button:
     def is_clicked(self, pos):
         return self.enabled and self.rect.collidepoint(pos)
 
-def draw_hearts(lives):
-    for i in range(lives):
-        screen.blit(heart_img, (10 + i * 25, 40))
+# ==== CREATE LEVEL SELECT BUTTONS ====
+def build_level_buttons():
+    """Return list of level buttons based on unlocked levels."""
+    buttons = []
+    spacing = 20  # Space between buttons
+    button_width = 200
+    button_height = 50
+    start_y = SCREEN_HEIGHT // 2 - ((LEVELS * (button_height + spacing)) // 2)
 
+    for i in range(LEVELS):
+        x = SCREEN_WIDTH // 2 - button_width // 2
+        y = start_y + i * (button_height + spacing)
+        text = f"Level {i + 1}"
+        enabled = (i < unlocked_levels)  # Unlock if previous level completed
+        btn = Button((x, y, button_width, button_height), text, enabled)
+        buttons.append(btn)
+    return buttons
+
+# ==== SPACE INVADERS GAME LOOP PER LEVEL ====
+def run_level(level_num):
+    """Run the game for a single level."""
+    global unlocked_levels, level_scores
+
+    # Create player rectangle
+    player = player_img.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
+
+    bullets = []  # List of bullet rects
+    invaders = []  # List of invader rects
+    invader_speed = INVADER_SPEED_BASE + level_num - 1  # Speed scales with level
+    last_shot_time = 0  # Last bullet fired time
+    lives = PLAYER_LIVES
+    score = 0
+
+    # Spawn invaders (more per higher level)
+    for _ in range(5 + level_num * 2):
+        x = random.randint(0, SCREEN_WIDTH - 30)
+        y = random.randint(50, 200)
+        invaders.append(invader_img.get_rect(topleft=(x, y)))
+
+    move_left = False
+    move_right = False
+    game_active = True
+
+    while game_active:
+        screen.fill(BLACK)
+
+        # === EVENT HANDLING ===
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_progress(unlocked_levels, level_scores)
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_a:
+                    move_left = True
+                if event.key == pygame.K_d:
+                    move_right = True
+                if event.key == pygame.K_w:
+                    # Shoot bullet if cooldown passed
+                    now = pygame.time.get_ticks() / 1000
+                    if now - last_shot_time >= BULLET_COOLDOWN:
+                        last_shot_time = now
+                        bullet = bullet_img.get_rect(midbottom=player.midtop)
+                        bullets.append(bullet)
+                        # shoot_sound.play()
+                if event.key == pygame.K_ESCAPE:
+                    return  # Quit level back to menu
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_a:
+                    move_left = False
+                if event.key == pygame.K_d:
+                    move_right = False
+
+        # === PLAYER MOVEMENT ===
+        if move_left:
+            player.x -= PLAYER_SPEED
+            player.x = max(player.x, 0)  # Prevent moving off screen
+        if move_right:
+            player.x += PLAYER_SPEED
+            player.right = min(player.right, SCREEN_WIDTH)
+
+        # === BULLETS MOVE UP ===
+        for bullet in bullets[:]:
+            bullet.y -= BULLET_SPEED
+            if bullet.bottom < 0:
+                bullets.remove(bullet)
+
+        # === INVADERS MOVE ===
+        edge_reached = False
+        for inv in invaders:
+            inv.x += invader_speed
+            if inv.right >= SCREEN_WIDTH or inv.left <= 0:
+                edge_reached = True
+        if edge_reached:
+            invader_speed *= -1  # Reverse direction
+            for inv in invaders:
+                inv.y += 25  # Drop down a bit
+
+        # === COLLISIONS ===
+        for inv in invaders[:]:
+            for bullet in bullets[:]:
+                if inv.colliderect(bullet):
+                    bullets.remove(bullet)
+                    invaders.remove(inv)
+                    score += 10
+                    # invader_hit_sound.play()
+                    break
+            if inv.colliderect(player) or inv.bottom >= SCREEN_HEIGHT - 40:
+                lives -= 1
+                if lives <= 0:
+                    game_over_screen(score)
+                    return
+
+        # === WIN CHECK ===
+        if not invaders:
+            # Unlock next level if not already unlocked
+            if unlocked_levels < level_num + 1 and level_num < LEVELS:
+                unlocked_levels = level_num + 1
+            level_scores[str(level_num)] = score
+            save_progress(unlocked_levels, level_scores)
+            return
+
+        # === DRAW EVERYTHING ===
+        screen.blit(player_img, player)
+        for inv in invaders:
+            screen.blit(invader_img, inv)
+        for bullet in bullets:
+            screen.blit(bullet_img, bullet)
+
+        # Draw HUD
+        hud = font.render(f"Level {level_num}  Lives: {lives}  Score: {score}", True, WHITE)
+        screen.blit(hud, (10, 10))
+
+        pygame.display.flip()
+        clock.tick(60)  # 60 FPS
+
+# ==== GAME OVER SCREEN ====
 def game_over_screen(score):
     while True:
         screen.fill(BLACK)
@@ -110,248 +248,25 @@ def game_over_screen(score):
                     pygame.quit()
                     sys.exit()
 
-# ==== GAME LOOP ====
-def run_endless_mode(difficulty):
-    global SCREEN_WIDTH, SCREEN_HEIGHT, screen
-
-    player = player_img.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
-    bullets = []
-    invaders = []
-    lives = PLAYER_LIVES
-    score = 0
-    last_shot_time = 0
-    spawn_timer = 0
-    shake_frames = 0
-    flash_timer = 0
-    flash_text = ""
-    last_life_score = 0
-
-    if difficulty == "Easy":
-        spawn_interval = 2.0
-    elif difficulty == "Medium":
-        spawn_interval = 1.0
-    else:
-        spawn_interval = 0.5
-
-    bullet_pattern = 1
-    game_active = True
-
-    while game_active:
-        if shake_frames > 0:
-            offset_x = random.randint(-5, 5)
-            offset_y = random.randint(-5, 5)
-            shake_frames -= 1
-        else:
-            offset_x = offset_y = 0
-
-        screen.fill(BLACK)
-        temp_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        temp_surf.fill(BLACK)
-
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            player.x -= PLAYER_SPEED
-            player.x = max(player.x, 0)
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            player.x += PLAYER_SPEED
-            player.right = min(player.right, SCREEN_WIDTH)
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return
-
-        spawn_timer += clock.get_time() / 1000
-        if spawn_timer >= spawn_interval:
-            spawn_timer = 0
-            x = random.randint(0, SCREEN_WIDTH - invader_img.get_width())
-            invaders.append(invader_img.get_rect(topleft=(x, 0)))
-
-        now = pygame.time.get_ticks() / 1000
-        if (keys[pygame.K_w] or keys[pygame.K_UP]) and now - last_shot_time >= BULLET_COOLDOWN:
-            last_shot_time = now
-            if bullet_pattern == 1:
-                bullets.append(bullet_img.get_rect(midbottom=player.midtop))
-            elif bullet_pattern == 2:
-                for offset in [-15, 0, 15]:
-                    bullets.append(bullet_img.get_rect(midbottom=(player.midtop[0] + offset, player.midtop[1])))
-            elif bullet_pattern >= 3:
-                for offset in [-30, -15, 0, 15, 30]:
-                    bullets.append(bullet_img.get_rect(midbottom=(player.midtop[0] + offset, player.midtop[1])))
-
-        if score >= 500:
-            bullet_pattern = 3
-        elif score >= 250:
-            bullet_pattern = 2
-
-        if score - last_life_score >= EXTRA_LIFE_SCORE:
-            lives = min(lives + 1, MAX_LIVES)
-            last_life_score = score
-            flash_text = "+1 Life!"
-            flash_timer = HEALTH_FLASH_TIME
-
-        for b in bullets[:]:
-            b.y -= BULLET_SPEED
-            if b.bottom < 0:
-                bullets.remove(b)
-
-        for inv in invaders[:]:
-            inv.y += 2
-            if inv.colliderect(player):
-                lives -= 1
-                invaders.remove(inv)
-                shake_frames = SHAKE_DURATION
-                flash_text = "Ouch!"
-                flash_timer = HEALTH_FLASH_TIME
-            elif inv.top > SCREEN_HEIGHT:
-                invaders.remove(inv)
-
-        for inv in invaders[:]:
-            for b in bullets[:]:
-                if inv.colliderect(b):
-                    bullets.remove(b)
-                    invaders.remove(inv)
-                    score += 10
-                    break
-
-        if lives <= 0:
-            game_over_screen(score)
-            return
-
-        temp_surf.blit(player_img, player)
-        for inv in invaders:
-            temp_surf.blit(invader_img, inv)
-        for b in bullets:
-            temp_surf.blit(bullet_img, b)
-
-        hud = font.render(f"{difficulty} Mode  Score: {score}", True, WHITE)
-        temp_surf.blit(hud, (10, 10))
-        draw_hearts(lives)
-
-        if flash_timer > 0:
-            flash_surface = font.render(flash_text, True, RED)
-            temp_surf.blit(flash_surface, (SCREEN_WIDTH // 2 - flash_surface.get_width() // 2, 80))
-            flash_timer -= 1
-
-        screen.blit(temp_surf, (offset_x, offset_y))
-        pygame.display.flip()
-        clock.tick(60)
-
-# ==== DISPLAY MODE SELECTION MENU WITH WINDOW SIZE INPUT ====
-
-def get_text_input(prompt, default_text="", max_length=5):
-    """Simple input box to get numbers for width/height."""
-    input_str = default_text
-    active = True
-
-    input_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2, 200, 40)
-    color_active = GREEN
-    color_inactive = GRAY
-    color = color_inactive
-
-    while active:
-        screen.fill(BLACK)
-        prompt_surface = font.render(prompt, True, WHITE)
-        screen.blit(prompt_surface, (SCREEN_WIDTH // 2 - prompt_surface.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_BACKSPACE:
-                    input_str = input_str[:-1]
-                elif event.key == pygame.K_RETURN:
-                    if input_str.isdigit():
-                        return int(input_str)
-                elif len(input_str) < max_length and event.unicode.isdigit():
-                    input_str += event.unicode
-
-        color = color_active if True else color_inactive
-        pygame.draw.rect(screen, color, input_rect, 2)
-
-        text_surface = font.render(input_str, True, WHITE)
-        screen.blit(text_surface, (input_rect.x + 5, input_rect.y + 5))
-
-        pygame.display.flip()
-        clock.tick(30)
-
-def display_mode_menu():
-    global screen, SCREEN_WIDTH, SCREEN_HEIGHT
-
-    modes = ["Windowed", "Fullscreen", "Borderless"]
-    buttons = []
-    spacing = 20
-    w, h = 250, 50
-    start_y = 200
-
-    while True:
-        if screen is None:
-            screen = pygame.display.set_mode((DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT))
-        screen.fill(BLACK)
-        title = font.render("Select Display Mode", True, WHITE)
-        screen.blit(title, (DEFAULT_SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
-
-        buttons.clear()
-        for i, mode in enumerate(modes):
-            btn = Button((DEFAULT_SCREEN_WIDTH // 2 - w // 2, start_y + i * (h + spacing), w, h), mode, True)
-            btn.draw(screen)
-            buttons.append(btn)
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                for i, btn in enumerate(buttons):
-                    if btn.is_clicked(event.pos):
-                        chosen_mode = modes[i]
-                        if chosen_mode == "Windowed":
-                            width = get_text_input("Enter window width:", str(DEFAULT_SCREEN_WIDTH))
-                            height = get_text_input("Enter window height:", str(DEFAULT_SCREEN_HEIGHT))
-                            SCREEN_WIDTH = max(300, min(width, 1920))
-                            SCREEN_HEIGHT = max(300, min(height, 1080))
-                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-                        elif chosen_mode == "Fullscreen":
-                            info = pygame.display.Info()
-                            SCREEN_WIDTH = info.current_w
-                            SCREEN_HEIGHT = info.current_h
-                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
-                        elif chosen_mode == "Borderless":
-                            info = pygame.display.Info()
-                            SCREEN_WIDTH = info.current_w
-                            SCREEN_HEIGHT = info.current_h
-                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
-
-                        # After setting screen mode, go to difficulty menu
-                        difficulty_menu()
-                        return
-
-        pygame.display.flip()
-        clock.tick(60)
-
-# ==== DIFFICULTY MENU ====
-
-def difficulty_menu():
-    difficulties = ["Easy", "Medium", "Hard"]
-    buttons = []
-    spacing = 20
-    w, h = 200, 50
-    start_y = SCREEN_HEIGHT // 2 - ((len(difficulties) * (h + spacing)) // 2)
-
+# ==== MAIN MENU LOOP ====
+def main_menu():
+    """Show level select menu + handle input."""
     while True:
         screen.fill(BLACK)
         title = font.render("Select Difficulty Mode", True, WHITE)
         screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, SCREEN_HEIGHT // 4))
 
-        buttons.clear()
-        for i, diff in enumerate(difficulties):
-            btn = Button((SCREEN_WIDTH // 2 - w // 2, start_y + i * (h + spacing), w, h), diff, True)
+        buttons = build_level_buttons()
+
+        for btn in buttons:
             btn.draw(screen)
-            buttons.append(btn)
+
+        # Show score for each level (if available)
+        for idx, btn in enumerate(buttons):
+            level_num = idx + 1
+            if str(level_num) in level_scores:
+                score_text = font.render(f"Score: {level_scores[str(level_num)]}", True, WHITE)
+                screen.blit(score_text, (btn.rect.right + 10, btn.rect.centery - 10))
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -365,5 +280,5 @@ def difficulty_menu():
         pygame.display.flip()
         clock.tick(60)
 
-display_mode_menu()
-
+# ==== START GAME ====
+main_menu()
