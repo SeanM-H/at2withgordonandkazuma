@@ -5,17 +5,17 @@ import json
 import os
 
 # ==== CONFIGURATION ====
-SCREEN_WIDTH = 600  # Width of game window
-SCREEN_HEIGHT = 600  # Height of game window
-PLAYER_SPEED = 5  # How fast the player moves left/right
-BULLET_SPEED = 15  # How fast bullets move upward
-INVADER_SPEED_BASE = 2  # Base speed of invaders, increases by level
-BULLET_COOLDOWN = 0.3  # Minimum time between shots (seconds)
-PLAYER_LIVES = 3  # Lives per level
-LEVELS = 5  # Total number of levels
-PROGRESS_FILE = "progress.json"  # File where progress is saved
+SCREEN_WIDTH = 600
+SCREEN_HEIGHT = 600
+PLAYER_SPEED = 5
+BULLET_SPEED = 15
+INVADER_SPEED_BASE = 2
+BULLET_COOLDOWN = 0.3
+PLAYER_LIVES = 3
+LEVELS = 5
+PROGRESS_FILE = "progress.json"
 
-# ==== COLORS (for text and placeholders) ====
+# ==== COLORS ====
 WHITE = (255, 255, 255)
 GRAY = (150, 150, 150)
 BLACK = (0, 0, 0)
@@ -23,54 +23,43 @@ GREEN = (0, 255, 0)
 
 # ==== INITIALIZE PYGAME ====
 pygame.init()
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))  # Create game window
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Space Invaders - Level Select")
-clock = pygame.time.Clock()  # To control FPS
-font = pygame.font.SysFont("Courier", 24)  # Font for text
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("Courier", 24)
 
 # ==== PLACEHOLDER GRAPHICS ====
-# These are simple colored shapes; replace with real images if desired
 player_img = pygame.Surface((40, 20))
-player_img.fill((0, 255, 255))  # Cyan for player
+player_img.fill((0, 255, 255))
 
 invader_img = pygame.Surface((30, 30))
-invader_img.fill((255, 0, 0))  # Red for invaders
+invader_img.fill((255, 0, 0))
 
 bullet_img = pygame.Surface((6, 10))
-bullet_img.fill((255, 255, 0))  # Yellow for bullets
-
-# ==== LOAD SOUNDS / MUSIC PLACEHOLDER ====
-# Uncomment + load real files when ready
-# shoot_sound = pygame.mixer.Sound("shoot.wav")
-# invader_hit_sound = pygame.mixer.Sound("invader_hit.wav")
-# pygame.mixer.music.load("background_music.mp3")
-# pygame.mixer.music.play(-1)  # Loop background music forever
+bullet_img.fill((255, 255, 0))
 
 # ==== LOAD OR INIT PROGRESS ====
 def load_progress():
-    """Load unlocked levels + scores from file if exists."""
     if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, 'r') as f:
             data = json.load(f)
             return data.get("unlocked_levels", 1), data.get("scores", {})
-    return 1, {}  # Start fresh
+    return 1, {}
 
 def save_progress(unlocked_levels, scores):
-    """Save unlocked levels + scores to file."""
     with open(PROGRESS_FILE, 'w') as f:
         json.dump({"unlocked_levels": unlocked_levels, "scores": scores}, f)
 
 unlocked_levels, level_scores = load_progress()
 
-# ==== BUTTON CLASS FOR MENU ====
+# ==== BUTTON CLASS ====
 class Button:
     def __init__(self, rect, text, enabled=True):
         self.rect = pygame.Rect(rect)
         self.text = text
-        self.enabled = enabled  # Whether button is clickable
+        self.enabled = enabled
 
     def draw(self, surface):
-        """Draw the button rectangle and label."""
         color = GREEN if self.enabled else GRAY
         pygame.draw.rect(surface, color, self.rect, border_radius=8)
         label = font.render(self.text, True, BLACK)
@@ -78,14 +67,31 @@ class Button:
         surface.blit(label, label_rect)
 
     def is_clicked(self, pos):
-        """Check if this button was clicked."""
         return self.enabled and self.rect.collidepoint(pos)
 
-# ==== CREATE LEVEL SELECT BUTTONS ====
+# ==== BARRIER CLASS ====
+class Barrier:
+    def __init__(self, x, y):
+        self.rect = pygame.Rect(x, y, 60, 20)
+        self.health = 3
+
+    def draw(self, surface):
+        if self.health == 3:
+            color = (0, 200, 0)
+        elif self.health == 2:
+            color = (200, 200, 0)
+        else:
+            color = (200, 0, 0)
+        pygame.draw.rect(surface, color, self.rect)
+
+    def hit(self):
+        self.health -= 1
+        return self.health <= 0
+
+# ==== BUILD LEVEL BUTTONS ====
 def build_level_buttons():
-    """Return list of level buttons based on unlocked levels."""
     buttons = []
-    spacing = 20  # Space between buttons
+    spacing = 20
     button_width = 200
     button_height = 50
     start_y = SCREEN_HEIGHT // 2 - ((LEVELS * (button_height + spacing)) // 2)
@@ -94,31 +100,35 @@ def build_level_buttons():
         x = SCREEN_WIDTH // 2 - button_width // 2
         y = start_y + i * (button_height + spacing)
         text = f"Level {i + 1}"
-        enabled = (i < unlocked_levels)  # Unlock if previous level completed
+        enabled = (i < unlocked_levels)
         btn = Button((x, y, button_width, button_height), text, enabled)
         buttons.append(btn)
     return buttons
 
-# ==== SPACE INVADERS GAME LOOP PER LEVEL ====
+# ==== RUN A LEVEL ====
 def run_level(level_num):
-    """Run the game for a single level."""
     global unlocked_levels, level_scores
 
-    # Create player rectangle
     player = player_img.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
-
-    bullets = []  # List of bullet rects
-    invaders = []  # List of invader rects
-    invader_speed = INVADER_SPEED_BASE + level_num - 1  # Speed scales with level
-    last_shot_time = 0  # Last bullet fired time
+    bullets = []
+    invaders = []
+    invader_speed = INVADER_SPEED_BASE + level_num - 1
+    last_shot_time = 0
     lives = PLAYER_LIVES
     score = 0
 
-    # Spawn invaders (more per higher level)
     for _ in range(5 + level_num * 2):
         x = random.randint(0, SCREEN_WIDTH - 30)
         y = random.randint(50, 200)
         invaders.append(invader_img.get_rect(topleft=(x, y)))
+
+    # Create barriers for levels 3+
+    barriers = []
+    if level_num >= 3:
+        barrier_y = SCREEN_HEIGHT - 120
+        spacing = SCREEN_WIDTH // 4
+        for i in range(1, 4):
+            barriers.append(Barrier(i * spacing - 30, barrier_y))
 
     move_left = False
     move_right = False
@@ -127,7 +137,7 @@ def run_level(level_num):
     while game_active:
         screen.fill(BLACK)
 
-        # === EVENT HANDLING ===
+        # === EVENTS ===
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 save_progress(unlocked_levels, level_scores)
@@ -139,15 +149,13 @@ def run_level(level_num):
                 if event.key == pygame.K_d:
                     move_right = True
                 if event.key == pygame.K_w:
-                    # Shoot bullet if cooldown passed
                     now = pygame.time.get_ticks() / 1000
                     if now - last_shot_time >= BULLET_COOLDOWN:
                         last_shot_time = now
                         bullet = bullet_img.get_rect(midbottom=player.midtop)
                         bullets.append(bullet)
-                        # shoot_sound.play()
                 if event.key == pygame.K_ESCAPE:
-                    return  # Quit level back to menu
+                    return
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_a:
                     move_left = False
@@ -157,27 +165,35 @@ def run_level(level_num):
         # === PLAYER MOVEMENT ===
         if move_left:
             player.x -= PLAYER_SPEED
-            player.x = max(player.x, 0)  # Prevent moving off screen
+            player.x = max(player.x, 0)
         if move_right:
             player.x += PLAYER_SPEED
             player.right = min(player.right, SCREEN_WIDTH)
 
-        # === BULLETS MOVE UP ===
+        # === BULLET MOVEMENT AND COLLISION ===
         for bullet in bullets[:]:
             bullet.y -= BULLET_SPEED
             if bullet.bottom < 0:
                 bullets.remove(bullet)
+                continue
 
-        # === INVADERS MOVE ===
+            for barrier in barriers[:]:
+                if barrier.rect.colliderect(bullet):
+                    bullets.remove(bullet)
+                    if barrier.hit():
+                        barriers.remove(barrier)
+                    break
+
+        # === INVADER MOVEMENT ===
         edge_reached = False
         for inv in invaders:
             inv.x += invader_speed
             if inv.right >= SCREEN_WIDTH or inv.left <= 0:
                 edge_reached = True
         if edge_reached:
-            invader_speed *= -1  # Reverse direction
+            invader_speed *= -1
             for inv in invaders:
-                inv.y += 25  # Drop down a bit
+                inv.y += 25
 
         # === COLLISIONS ===
         for inv in invaders[:]:
@@ -186,7 +202,6 @@ def run_level(level_num):
                     bullets.remove(bullet)
                     invaders.remove(inv)
                     score += 10
-                    # invader_hit_sound.play()
                     break
             if inv.colliderect(player) or inv.bottom >= SCREEN_HEIGHT - 40:
                 lives -= 1
@@ -196,7 +211,6 @@ def run_level(level_num):
 
         # === WIN CHECK ===
         if not invaders:
-            # Unlock next level if not already unlocked
             if unlocked_levels < level_num + 1 and level_num < LEVELS:
                 unlocked_levels = level_num + 1
             level_scores[str(level_num)] = score
@@ -209,17 +223,17 @@ def run_level(level_num):
             screen.blit(invader_img, inv)
         for bullet in bullets:
             screen.blit(bullet_img, bullet)
+        for barrier in barriers:
+            barrier.draw(screen)
 
-        # Draw HUD
         hud = font.render(f"Level {level_num}  Lives: {lives}  Score: {score}", True, WHITE)
         screen.blit(hud, (10, 10))
 
         pygame.display.flip()
-        clock.tick(60)  # 60 FPS
+        clock.tick(60)
 
 # ==== GAME OVER SCREEN ====
 def game_over_screen(score):
-    """Display game over screen + options."""
     while True:
         screen.fill(BLACK)
         msg = font.render(f"Game Over! Score: {score}", True, WHITE)
@@ -241,27 +255,23 @@ def game_over_screen(score):
                     pygame.quit()
                     sys.exit()
 
-# ==== MAIN MENU LOOP ====
+# ==== MAIN MENU ====
 def main_menu():
-    """Show level select menu + handle input."""
     while True:
         screen.fill(BLACK)
         title = font.render("Select a Level", True, WHITE)
         screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
 
         buttons = build_level_buttons()
-
         for btn in buttons:
             btn.draw(screen)
 
-        # Show score for each level (if available)
         for idx, btn in enumerate(buttons):
             level_num = idx + 1
             if str(level_num) in level_scores:
                 score_text = font.render(f"Score: {level_scores[str(level_num)]}", True, WHITE)
                 screen.blit(score_text, (btn.rect.right + 10, btn.rect.centery - 10))
 
-        # Handle clicks
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 save_progress(unlocked_levels, level_scores)
@@ -277,3 +287,4 @@ def main_menu():
 
 # ==== START GAME ====
 main_menu()
+
