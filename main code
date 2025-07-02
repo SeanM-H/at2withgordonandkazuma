@@ -1,211 +1,442 @@
-import turtle
+import pygame
 import random
-import time
+import sys
+import json
+import os
 
-# ==== CONFIGURATION ====
-SCREEN_WIDTH = 600
-SCREEN_HEIGHT = 600
-NUM_INVADERS = 8
-INVADER_SPEED = 2  # Slower invaders
-PLAYER_SPEED = 15
-BULLET_SPEED = 10  # Slower bullets
-BULLET_COOLDOWN = 0.3
+# ==== CONFIGURATION ====  # basic setup stuff
+DEFAULT_SCREEN_WIDTH = 600
+DEFAULT_SCREEN_HEIGHT = 600
+PLAYER_SPEED = 5
+BULLET_SPEED = 18
+INVADER_SPEED_BASE = 2
+BULLET_COOLDOWN = 0.25
 PLAYER_LIVES = 3
+PROGRESS_FILE = "progress.json"
+MAX_LIVES = PLAYER_LIVES
+SHAKE_DURATION = 5  # frames
+HEALTH_FLASH_TIME = 15  # frames
+EXTRA_LIFE_SCORE = 1000
 
-# ==== SCREEN SETUP ====
-screen = turtle.Screen()
-screen.title("Space Invaders - Continuous Movement")
-screen.bgcolor("black")
-screen.setup(width=SCREEN_WIDTH, height=SCREEN_HEIGHT)
-screen.tracer(0)
+# ==== COLORS ====
+WHITE = (255, 255, 255)
+GRAY = (150, 150, 150)
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+DARK_RED = (100, 0, 0)
 
-# ==== SCORE & STATUS ====
-score = 0
-lives = PLAYER_LIVES
-last_shot_time = 0
-game_active = True
+pygame.init()
+font = pygame.font.SysFont("Courier", 24)
+clock = pygame.time.Clock()
 
-# ==== HUD ====
-hud = turtle.Turtle()
-hud.color("white")
-hud.penup()
-hud.hideturtle()
-hud.goto(-SCREEN_WIDTH//2 + 10, SCREEN_HEIGHT//2 - 30)
-def update_hud():
-    hud.clear()
-    hud.write(f"Score: {score}  Lives: {lives}", font=("Courier", 14, "normal"))
+# ==== Global vars for screen (will be set later) ====
+screen = None
+SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
+SCREEN_HEIGHT = DEFAULT_SCREEN_HEIGHT
 
-update_hud()
+# ==== BARRIER CLASS ====
+class Barrier:
+    def __init__(self, x, y):
+        # The barrier's rectangular area and health count
+        self.rect = pygame.Rect(x, y, 60, 20)
+        self.health = 3  # barriers take 3 hits to break
 
-# ==== PLAYER ====
-player = turtle.Turtle()
-player.shape("arrow")
-player.color("cyan")
-player.penup()
-player.setheading(90)
-player.goto(0, -SCREEN_HEIGHT//2 + 60)
+        # TODO: Load barrier image here if you have one
+        # Example:
+        # self.image = pygame.image.load("barrier.png").convert_alpha()
 
-# ==== INVADERS ====
-invaders = []
-invader_speed = INVADER_SPEED
+    def draw(self, surface):
+        # If you have an image, you could blit it here instead of drawing rects:
+        # surface.blit(self.image, self.rect)
 
-for _ in range(NUM_INVADERS):
-    invader = turtle.Turtle()
-    invader.shape("square")
-    invader.color("red")
-    invader.penup()
-    invader.goto(random.randint(-250, 250), random.randint(100, 250))
-    invaders.append(invader)
+        # Color changes with health
+        if self.health == 3:
+            color = (0, 200, 0)  # green
+        elif self.health == 2:
+            color = (200, 200, 0)  # yellow
+        else:
+            color = (200, 0, 0)  # red
+        pygame.draw.rect(surface, color, self.rect)
 
-# ==== BULLETS ====
-bullets = []
+    def hit(self):
+        # Reduce health by 1, return True if destroyed
+        self.health -= 1
+        return self.health <= 0
 
-def fire_bullet():
-    global last_shot_time
-    now = time.time()
-    if now - last_shot_time >= BULLET_COOLDOWN and game_active:
-        last_shot_time = now
-        bullet = turtle.Turtle()
-        bullet.shape("triangle")
-        bullet.color("yellow")
-        bullet.penup()
-        bullet.setheading(90)
-        bullet.shapesize(0.4, 0.4)
-        bullet.goto(player.xcor(), player.ycor() + 10)
-        bullets.append(bullet)
+# ==== LOAD SPRITES ====
+def load_sprites():
+    try:
+        player_img = pygame.image.load("player_ship.png").convert_alpha()
+        invader_img = pygame.image.load("invader.png").convert_alpha()
+        bullet_img = pygame.image.load("bullet.png").convert_alpha()
+        heart_img = pygame.image.load("heart.png").convert_alpha()
 
-# ==== PLAYER MOVEMENT FLAGS ====
-a_down = False
-d_down = False
+        # TODO: You can also load a barrier image here for use in Barrier class
+        # barrier_img = pygame.image.load("barrier.png").convert_alpha()
 
-def press_a():
-    global a_down
-    a_down = True
+    except:
+        # fallback plain shapes if images missing
+        player_img = pygame.Surface((40, 20))
+        player_img.fill((0, 255, 255))
+        invader_img = pygame.Surface((30, 30))
+        invader_img.fill((255, 0, 0))
+        bullet_img = pygame.Surface((6, 10))
+        bullet_img.fill((255, 255, 0))
+        heart_img = pygame.Surface((20, 20))
+        heart_img.fill((255, 0, 0))
 
-def release_a():
-    global a_down
-    a_down = False
+        # barrier_img = pygame.Surface((60, 20))
+        # barrier_img.fill((0, 200, 0))
 
-def press_d():
-    global d_down
-    d_down = True
+    return player_img, invader_img, bullet_img, heart_img
+    # return player_img, invader_img, bullet_img, heart_img, barrier_img  # if you add barrier_img
 
-def release_d():
-    global d_down
-    d_down = False
+player_img, invader_img, bullet_img, heart_img = load_sprites()
 
-screen.listen()
-screen.onkeypress(press_a, "a")
-screen.onkeyrelease(release_a, "a")
-screen.onkeypress(press_d, "d")
-screen.onkeyrelease(release_d, "d")
-screen.onkeypress(fire_bullet, "w")
+# ==== LOAD PROGRESS ====
+PROGRESS_FILE = "progress.json"
+def load_progress():
+    if os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get("unlocked_levels", 1), data.get("scores", {})
+    return 1, {}
 
-# ==== GAME OVER SCREEN ====
-def game_over_screen():
-    global game_active
-    game_active = False
-    for inv in invaders:
-        inv.hideturtle()
-    for b in bullets:
-        b.hideturtle()
-    player.hideturtle()
-    
-    over = turtle.Turtle()
-    over.color("white")
-    over.penup()
-    over.hideturtle()
-    over.goto(0, 0)
-    over.write("GAME OVER\nPress R to Restart", align="center", font=("Courier", 20, "bold"))
+def save_progress(unlocked_levels, scores):
+    with open(PROGRESS_FILE, 'w') as f:
+        json.dump({"unlocked_levels": unlocked_levels, "scores": scores}, f)
 
-def restart_game():
-    global score, lives, bullets, game_active, invader_speed
+unlocked_levels, level_scores = load_progress()
 
-    if game_active:
-        return  # Don't restart mid-game
+class Button:
+    def __init__(self, rect, text, enabled=True):
+        self.rect = pygame.Rect(rect)
+        self.text = text
+        self.enabled = enabled
 
-    score = 0
+    def draw(self, surface):
+        color = GREEN if self.enabled else GRAY
+        pygame.draw.rect(surface, color, self.rect, border_radius=8)
+        label = font.render(self.text, True, BLACK)
+        label_rect = label.get_rect(center=self.rect.center)
+        surface.blit(label, label_rect)
+
+    def is_clicked(self, pos):
+        return self.enabled and self.rect.collidepoint(pos)
+
+def draw_hearts(lives):
+    for i in range(lives):
+        screen.blit(heart_img, (10 + i * 25, 40))
+
+def game_over_screen(score):
+    while True:
+        screen.fill(BLACK)
+        msg = font.render(f"Game Over! Score: {score}", True, WHITE)
+        hint = font.render("Press M for Menu or Q to Quit", True, WHITE)
+        screen.blit(msg, (SCREEN_WIDTH // 2 - msg.get_width() // 2, SCREEN_HEIGHT // 2 - 20))
+        screen.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2, SCREEN_HEIGHT // 2 + 20))
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_m:
+                    return
+                if event.key == pygame.K_q:
+                    pygame.quit()
+                    sys.exit()
+
+# ==== GAME LOOP ====
+def run_endless_mode(difficulty):
+    global SCREEN_WIDTH, SCREEN_HEIGHT, screen
+
+    player = player_img.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
+    bullets = []
+    invaders = []
+    barriers = []  # List to hold barrier objects
     lives = PLAYER_LIVES
+    score = 0
+    last_shot_time = 0
+    spawn_timer = 0
+    shake_frames = 0
+    flash_timer = 0
+    flash_text = ""
+    last_life_score = 0
+
+    if difficulty == "Easy":
+        spawn_interval = 2.0
+    elif difficulty == "Medium":
+        spawn_interval = 1.0
+    else:
+        spawn_interval = 0.5
+
+    # Create 3 barriers spaced evenly across near bottom of screen
+    barrier_y = SCREEN_HEIGHT - 150
+    spacing = SCREEN_WIDTH // 4
+    for i in range(1, 4):
+        barriers.append(Barrier(i * spacing - 30, barrier_y))
+
+    bullet_pattern = 1
     game_active = True
-    invader_speed = INVADER_SPEED
-    player.showturtle()
-    player.goto(0, -SCREEN_HEIGHT//2 + 60)
-    bullets.clear()
 
-    for inv in invaders:
-        inv.showturtle()
-        inv.goto(random.randint(-250, 250), random.randint(100, 250))
+    while game_active:
+        if shake_frames > 0:
+            offset_x = random.randint(-5, 5)
+            offset_y = random.randint(-5, 5)
+            shake_frames -= 1
+        else:
+            offset_x = offset_y = 0
 
-    update_hud()
-    game_loop()
+        screen.fill(BLACK)
+        temp_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        temp_surf.fill(BLACK)
 
-screen.onkeypress(restart_game, "r")
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            player.x -= PLAYER_SPEED
+            player.x = max(player.x, 0)
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            player.x += PLAYER_SPEED
+            player.right = min(player.right, SCREEN_WIDTH)
 
-# ==== MAIN GAME LOOP ====
-def game_loop():
-    global invader_speed, score, lives, game_active
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return
 
-    if not game_active:
-        return
+        spawn_timer += clock.get_time() / 1000
+        if spawn_timer >= spawn_interval:
+            spawn_timer = 0
+            x = random.randint(0, SCREEN_WIDTH - invader_img.get_width())
+            invaders.append(invader_img.get_rect(topleft=(x, 0)))
 
-    # Move player continuously if keys are held down
-    if a_down:
-        x = player.xcor() - PLAYER_SPEED
-        if x < -SCREEN_WIDTH//2 + 40:
-            x = -SCREEN_WIDTH//2 + 40
-        player.setx(x)
-    if d_down:
-        x = player.xcor() + PLAYER_SPEED
-        if x > SCREEN_WIDTH//2 - 40:
-            x = SCREEN_WIDTH//2 - 40
-        player.setx(x)
+        now = pygame.time.get_ticks() / 1000
+        if (keys[pygame.K_w] or keys[pygame.K_UP]) and now - last_shot_time >= BULLET_COOLDOWN:
+            last_shot_time = now
+            if bullet_pattern == 1:
+                bullets.append(bullet_img.get_rect(midbottom=player.midtop))
+            elif bullet_pattern == 2:
+                for offset in [-15, 0, 15]:
+                    bullets.append(bullet_img.get_rect(midbottom=(player.midtop[0] + offset, player.midtop[1])))
+            elif bullet_pattern >= 3:
+                for offset in [-30, -15, 0, 15, 30]:
+                    bullets.append(bullet_img.get_rect(midbottom=(player.midtop[0] + offset, player.midtop[1])))
 
-    # Update bullet positions
-    for bullet in bullets[:]:
-        bullet.sety(bullet.ycor() + BULLET_SPEED)
-        if bullet.ycor() > SCREEN_HEIGHT//2 - 20:
-            bullet.hideturtle()
-            bullets.remove(bullet)
+        if score >= 500:
+            bullet_pattern = 3
+        elif score >= 250:
+            bullet_pattern = 2
 
-    # Update invaders
-    for invader in invaders:
-        invader.setx(invader.xcor() + invader_speed)
+        if score - last_life_score >= EXTRA_LIFE_SCORE:
+            lives = min(lives + 1, MAX_LIVES)
+            last_life_score = score
+            flash_text = "+1 Life!"
+            flash_timer = HEALTH_FLASH_TIME
 
-        if invader.xcor() > SCREEN_WIDTH//2 - 40 or invader.xcor() < -SCREEN_WIDTH//2 + 40:
-            invader_speed *= -1
-            for i in invaders:
-                i.sety(i.ycor() - 25)
+        # Move bullets up, remove if off screen
+        for b in bullets[:]:
+            b.y -= BULLET_SPEED
+            if b.bottom < 0:
+                bullets.remove(b)
 
-        # Check collision with player
-        if invader.distance(player) < 20:
-            lives = 0
-            update_hud()
-            game_over_screen()
+        # Move invaders down, check collision with player
+        for inv in invaders[:]:
+            inv.y += 2
+
+            # Check collision with barriers first
+            hit_barrier = None
+            for barrier in barriers:
+                if inv.colliderect(barrier.rect):
+                    hit_barrier = barrier
+                    break
+
+            if hit_barrier:
+                # Invader hits barrier: reduce barrier health and remove invader
+                if hit_barrier.hit():
+                    barriers.remove(hit_barrier)
+                invaders.remove(inv)
+                # Optional: small shake effect
+                shake_frames = SHAKE_DURATION
+                flash_text = "Barrier Hit!"
+                flash_timer = HEALTH_FLASH_TIME
+
+            elif inv.colliderect(player):
+                lives -= 1
+                invaders.remove(inv)
+                shake_frames = SHAKE_DURATION
+                flash_text = "Ouch!"
+                flash_timer = HEALTH_FLASH_TIME
+            elif inv.top > SCREEN_HEIGHT:
+                invaders.remove(inv)
+
+        # Check bullet hits on invaders
+        for inv in invaders[:]:
+            for b in bullets[:]:
+                if inv.colliderect(b):
+                    bullets.remove(b)
+                    invaders.remove(inv)
+                    score += 10
+                    break
+
+        # *** Removed bullet-barrier collision ***
+        # Bullets pass through barriers, so no collision here.
+
+        if lives <= 0:
+            game_over_screen(score)
             return
 
-        # Check collision with bullet
-        for bullet in bullets[:]:
-            if invader.distance(bullet) < 15:
-                bullet.hideturtle()
-                bullets.remove(bullet)
-                x = random.randint(-250, 250)
-                y = random.randint(100, 250)
-                invader.goto(x, y)
-                score += 10
-                update_hud()
+        # Draw all game objects
+        temp_surf.blit(player_img, player)
+        for inv in invaders:
+            temp_surf.blit(invader_img, inv)
+        for b in bullets:
+            temp_surf.blit(bullet_img, b)
+        for barrier in barriers:
+            barrier.draw(temp_surf)  # draw barriers
 
-    for inv in invaders:
-        if inv.ycor() < -SCREEN_HEIGHT//2 + 60:
-            lives -= 1
-            update_hud()
-            inv.goto(random.randint(-250, 250), random.randint(100, 250))
-            if lives <= 0:
-                game_over_screen()
-                return
+        # HUD: difficulty and score
+        hud = font.render(f"{difficulty} Mode  Score: {score}", True, WHITE)
+        temp_surf.blit(hud, (10, 10))
+        draw_hearts(lives)
 
-    screen.update()
-    screen.ontimer(game_loop, 40)  # ~25 FPS
+        # Flash messages like "Ouch!" or "+1 Life!"
+        if flash_timer > 0:
+            flash_surface = font.render(flash_text, True, RED)
+            temp_surf.blit(flash_surface, (SCREEN_WIDTH // 2 - flash_surface.get_width() // 2, 80))
+            flash_timer -= 1
 
-# ==== START GAME ====
-game_loop()
-screen.mainloop()
+        screen.blit(temp_surf, (offset_x, offset_y))
+        pygame.display.flip()
+        clock.tick(60)
+
+def get_text_input(prompt, default_text="", max_length=5):
+    """Simple input box to get numbers for width/height."""
+    input_str = default_text
+    active = True
+
+    input_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2, 200, 40)
+    color_active = GREEN
+    color_inactive = GRAY
+    color = color_inactive
+
+    while active:
+        screen.fill(BLACK)
+        prompt_surface = font.render(prompt, True, WHITE)
+        screen.blit(prompt_surface, (SCREEN_WIDTH // 2 - prompt_surface.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_BACKSPACE:
+                    input_str = input_str[:-1]
+                elif event.key == pygame.K_RETURN:
+                    if input_str.isdigit():
+                        return int(input_str)
+                elif len(input_str) < max_length and event.unicode.isdigit():
+                    input_str += event.unicode
+
+        color = color_active if True else color_inactive
+        pygame.draw.rect(screen, color, input_rect, 2)
+
+        text_surface = font.render(input_str, True, WHITE)
+        screen.blit(text_surface, (input_rect.x + 5, input_rect.y + 5))
+
+        pygame.display.flip()
+        clock.tick(30)
+
+def display_mode_menu():
+    global screen, SCREEN_WIDTH, SCREEN_HEIGHT
+
+    modes = ["Windowed", "Fullscreen", "Borderless"]
+    buttons = []
+    spacing = 20
+    w, h = 250, 50
+    start_y = 200
+
+    while True:
+        if screen is None:
+            screen = pygame.display.set_mode((DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT))
+        screen.fill(BLACK)
+        title = font.render("Select Display Mode", True, WHITE)
+        screen.blit(title, (DEFAULT_SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
+
+        buttons.clear()
+        for i, mode in enumerate(modes):
+            btn = Button((DEFAULT_SCREEN_WIDTH // 2 - w // 2, start_y + i * (h + spacing), w, h), mode, True)
+            btn.draw(screen)
+            buttons.append(btn)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for i, btn in enumerate(buttons):
+                    if btn.is_clicked(event.pos):
+                        chosen_mode = modes[i]
+                        if chosen_mode == "Windowed":
+                            width = get_text_input("Enter window width:", str(DEFAULT_SCREEN_WIDTH))
+                            height = get_text_input("Enter window height:", str(DEFAULT_SCREEN_HEIGHT))
+                            SCREEN_WIDTH = max(300, min(width, 1920))
+                            SCREEN_HEIGHT = max(300, min(height, 1080))
+                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+                        elif chosen_mode == "Fullscreen":
+                            info = pygame.display.Info()
+                            SCREEN_WIDTH = info.current_w
+                            SCREEN_HEIGHT = info.current_h
+                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+                        elif chosen_mode == "Borderless":
+                            info = pygame.display.Info()
+                            SCREEN_WIDTH = info.current_w
+                            SCREEN_HEIGHT = info.current_h
+                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
+
+                        # After setting screen mode, go to difficulty menu
+                        difficulty_menu()
+                        return
+
+        pygame.display.flip()
+        clock.tick(60)
+
+# ==== DIFFICULTY MENU ====
+
+def difficulty_menu():
+    difficulties = ["Easy", "Medium", "Hard"]
+    buttons = []
+    spacing = 20
+    w, h = 200, 50
+    start_y = SCREEN_HEIGHT // 2 - ((len(difficulties) * (h + spacing)) // 2)
+
+    while True:
+        screen.fill(BLACK)
+        title = font.render("Select Difficulty Mode", True, WHITE)
+        screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, SCREEN_HEIGHT // 4))
+
+        buttons.clear()
+        for i, diff in enumerate(difficulties):
+            btn = Button((SCREEN_WIDTH // 2 - w // 2, start_y + i * (h + spacing), w, h), diff, True)
+            btn.draw(screen)
+            buttons.append(btn)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for i, btn in enumerate(buttons):
+                    if btn.is_clicked(event.pos):
+                        run_endless_mode(difficulties[i])
+
+        pygame.display.flip()
+        clock.tick(60)
+
+# Start the game by showing display mode menu
+display_mode_menu()
