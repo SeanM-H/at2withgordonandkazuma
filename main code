@@ -83,32 +83,20 @@ class Barrier:
 
 # ==== DRAW PLAYER FUNCTION ====
 def draw_player(surface, rect):
-    # Classic Space Invaders defender shape approximation with blue color
-    pygame.draw.rect(surface, BLUE, rect.inflate(0, -10))  # body
-    # Left cannon
+    pygame.draw.rect(surface, BLUE, rect.inflate(0, -10))
     pygame.draw.rect(surface, BLUE, (rect.left + 5, rect.top - 5, 10, 10))
-    # Right cannon
     pygame.draw.rect(surface, BLUE, (rect.right - 15, rect.top - 5, 10, 10))
-    # Bottom base
     pygame.draw.rect(surface, BLUE, (rect.left + 10, rect.bottom - 5, rect.width - 20, 5))
 
 # ==== DRAW INVADER FUNCTION ====
 def draw_invader(surface, rect):
-    # Approximate classic Space Invader shape with red
-    # Body
     pygame.draw.rect(surface, RED, rect.inflate(-10, -10))
-    # Eyes
-    eye_size = 5
-    pygame.draw.rect(surface, BLACK, (rect.left + 8, rect.top + 8, eye_size, eye_size))
-    pygame.draw.rect(surface, BLACK, (rect.right - 13, rect.top + 8, eye_size, eye_size))
-    # Legs (like little rectangles at bottom)
-    leg_width = 6
-    leg_height = 6
-    spacing = 5
+    pygame.draw.rect(surface, BLACK, (rect.left + 8, rect.top + 8, 5, 5))
+    pygame.draw.rect(surface, BLACK, (rect.right - 13, rect.top + 8, 5, 5))
     for i in range(3):
-        x = rect.left + 8 + i * (leg_width + spacing)
-        y = rect.bottom - leg_height
-        pygame.draw.rect(surface, RED, (x, y, leg_width, leg_height))
+        x = rect.left + 8 + i * (6 + 5)
+        y = rect.bottom - 6
+        pygame.draw.rect(surface, RED, (x, y, 6, 6))
 
 # ==== LEVEL SELECT BUTTONS ====
 def build_level_buttons():
@@ -117,24 +105,17 @@ def build_level_buttons():
     button_width = 200
     button_height = 50
     start_y = SCREEN_HEIGHT // 2 - ((LEVELS + 1) * (button_height + spacing)) // 2
-
-    # Level buttons
     for i in range(LEVELS):
         x = SCREEN_WIDTH // 2 - button_width // 2
         y = start_y + i * (button_height + spacing)
         text = f"Level {i + 1}"
         enabled = (i < unlocked_levels)
-        btn = Button((x, y, button_width, button_height), text, enabled)
-        buttons.append(btn)
-
-    # Endless mode button
-    endless_btn = Button(
+        buttons.append(Button((x, y, button_width, button_height), text, enabled))
+    buttons.append(Button(
         (SCREEN_WIDTH // 2 - button_width // 2, y + button_height + spacing, button_width, button_height),
         "Endless Mode",
         enabled=True
-    )
-    buttons.append(endless_btn)
-
+    ))
     return buttons
 
 # ==== GAME LOOP FOR LEVEL ====
@@ -143,26 +124,18 @@ def run_level(level_num):
 
     player = pygame.Rect(SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT - 50, 40, 20)
     bullets = []
-    invaders = []
     invader_speed = INVADER_SPEED_BASE + level_num - 1
     last_shot_time = 0
     lives = PLAYER_LIVES
     score = 0
+    current_level = level_num
 
-    current_level = level_num  # track current wave/level within this run
-
-    # Spawn invaders based on current_level
     def spawn_invaders(level):
-        invs = []
-        for _ in range(5 + level * 2):
-            x = random.randint(0, SCREEN_WIDTH - 30)
-            y = random.randint(50, 200)
-            invs.append(pygame.Rect(x, y, 30, 30))
-        return invs
+        return [pygame.Rect(random.randint(0, SCREEN_WIDTH - 30), random.randint(50, 200), 30, 30)
+                for _ in range(5 + level * 2)]
 
     invaders = spawn_invaders(current_level)
 
-    # Create barriers for levels 3+
     barriers = []
     if current_level >= 3:
         barrier_y = SCREEN_HEIGHT - 120
@@ -170,64 +143,37 @@ def run_level(level_num):
         for i in range(1, 4):
             barriers.append(Barrier(i * spacing - 30, barrier_y))
 
-    move_left = False
-    move_right = False
-    shooting = False
-
+    move_left = move_right = shooting = False
     game_active = True
 
     while game_active:
         screen.fill(BLACK)
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 save_progress(unlocked_levels, level_scores)
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_a:
-                    move_left = True
-                if event.key == pygame.K_d:
-                    move_right = True
-                if event.key == pygame.K_w:
-                    shooting = True
-                if event.key == pygame.K_ESCAPE:
-                    return
+                if event.key == pygame.K_a: move_left = True
+                if event.key == pygame.K_d: move_right = True
+                if event.key == pygame.K_w: shooting = True
+                if event.key == pygame.K_ESCAPE: return
             if event.type == pygame.KEYUP:
-                if event.key == pygame.K_a:
-                    move_left = False
-                if event.key == pygame.K_d:
-                    move_right = False
-                if event.key == pygame.K_w:
-                    shooting = False
+                if event.key == pygame.K_a: move_left = False
+                if event.key == pygame.K_d: move_right = False
+                if event.key == pygame.K_w: shooting = False
 
-        if move_left:
-            player.x -= PLAYER_SPEED
-            player.x = max(player.x, 0)
-        if move_right:
-            player.x += PLAYER_SPEED
-            player.right = min(player.right, SCREEN_WIDTH)
+        if move_left: player.x = max(0, player.x - PLAYER_SPEED)
+        if move_right: player.right = min(SCREEN_WIDTH, player.right + PLAYER_SPEED)
 
         now = pygame.time.get_ticks() / 1000
         if shooting and now - last_shot_time >= BULLET_COOLDOWN:
             last_shot_time = now
-            bullet = pygame.Rect(player.centerx - 3, player.top - 10, 6, 10)
-            bullets.append(bullet)
+            bullets.append(pygame.Rect(player.centerx - 3, player.top - 10, 6, 10))
 
         for bullet in bullets[:]:
             bullet.y -= BULLET_SPEED
-            if bullet.bottom < 0:
-                bullets.remove(bullet)
-                continue
-
-            # Bullet hits barrier
-            for barrier in barriers[:]:
-                if barrier.rect.colliderect(bullet):
-                    bullets.remove(bullet)
-                    if barrier.hit():
-                        barriers.remove(barrier)
-                    break
-
+            if bullet.bottom < 0: bullets.remove(bullet)
         edge_reached = False
         for inv in invaders:
             inv.x += invader_speed
@@ -245,22 +191,24 @@ def run_level(level_num):
                     invaders.remove(inv)
                     score += 10
                     break
+            for barrier in barriers[:]:
+                if inv.colliderect(barrier.rect):
+                    if barrier.hit():
+                        barriers.remove(barrier)
+                    invaders.remove(inv)
+                    break
             if inv.colliderect(player) or inv.bottom >= SCREEN_HEIGHT - 40:
                 lives -= 1
                 if lives <= 0:
                     game_over_screen(score)
                     return
 
-        # **KEY FIX: If no invaders remain, advance to next wave**
         if not invaders:
             current_level += 1
             if current_level > LEVELS:
-                current_level = LEVELS  # cap max level
-            # Increase invader speed for next wave
+                current_level = LEVELS
             invader_speed = INVADER_SPEED_BASE + current_level - 1
-            # Spawn new wave
             invaders = spawn_invaders(current_level)
-            # Reset barriers for higher levels
             barriers.clear()
             if current_level >= 3:
                 barrier_y = SCREEN_HEIGHT - 120
@@ -268,17 +216,10 @@ def run_level(level_num):
                 for i in range(1, 4):
                     barriers.append(Barrier(i * spacing - 30, barrier_y))
 
-        # Draw player with new shape
         draw_player(screen, player)
-
-        # Draw invaders with new shapes
-        for inv in invaders:
-            draw_invader(screen, inv)
-
-        for bullet in bullets:
-            pygame.draw.rect(screen, YELLOW, bullet)
-        for barrier in barriers:
-            barrier.draw(screen)
+        for inv in invaders: draw_invader(screen, inv)
+        for bullet in bullets: pygame.draw.rect(screen, YELLOW, bullet)
+        for barrier in barriers: barrier.draw(screen)
 
         hud = font.render(f"Level {current_level}  Lives: {lives}  Score: {score}", True, WHITE)
         screen.blit(hud, (10, 10))
@@ -286,35 +227,26 @@ def run_level(level_num):
         pygame.display.flip()
         clock.tick(60)
 
-# ==== ENDLESS MODE LOOP ====
+# ==== ENDLESS MODE ====
 def run_endless_mode():
     player = pygame.Rect(SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT - 50, 40, 20)
-    bullets = []
-    invaders = []
+    bullets, invaders, barriers = [], [], []
     invader_speed = INVADER_SPEED_BASE
     last_shot_time = 0
     lives = PLAYER_LIVES
     score = 0
-    spawn_timer = 0
-    spawn_interval = 2000  # spawn every 2 seconds (ms)
-
-    # Add barriers for endless mode as well
-    barriers = []
+    spawn_timer, spawn_interval = 0, 2000
     barrier_y = SCREEN_HEIGHT - 120
     spacing = SCREEN_WIDTH // 4
     for i in range(1, 4):
         barriers.append(Barrier(i * spacing - 30, barrier_y))
 
-    move_left = False
-    move_right = False
-    shooting = False
-
+    move_left = move_right = shooting = False
     game_active = True
 
     while game_active:
         dt = clock.tick(60)
         spawn_timer += dt
-
         screen.fill(BLACK)
 
         for event in pygame.event.get():
@@ -323,55 +255,31 @@ def run_endless_mode():
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_a:
-                    move_left = True
-                if event.key == pygame.K_d:
-                    move_right = True
-                if event.key == pygame.K_w:
-                    shooting = True
-                if event.key == pygame.K_ESCAPE:
-                    return
+                if event.key == pygame.K_a: move_left = True
+                if event.key == pygame.K_d: move_right = True
+                if event.key == pygame.K_w: shooting = True
+                if event.key == pygame.K_ESCAPE: return
             if event.type == pygame.KEYUP:
-                if event.key == pygame.K_a:
-                    move_left = False
-                if event.key == pygame.K_d:
-                    move_right = False
-                if event.key == pygame.K_w:
-                    shooting = False
+                if event.key == pygame.K_a: move_left = False
+                if event.key == pygame.K_d: move_right = False
+                if event.key == pygame.K_w: shooting = False
 
-        if move_left:
-            player.x -= PLAYER_SPEED
-            player.x = max(player.x, 0)
-        if move_right:
-            player.x += PLAYER_SPEED
-            player.right = min(player.right, SCREEN_WIDTH)
+        if move_left: player.x = max(0, player.x - PLAYER_SPEED)
+        if move_right: player.right = min(SCREEN_WIDTH, player.right + PLAYER_SPEED)
 
         if spawn_timer >= spawn_interval:
             spawn_timer = 0
-            x = random.randint(0, SCREEN_WIDTH - 30)
-            y = random.randint(50, 100)
-            invaders.append(pygame.Rect(x, y, 30, 30))
-            # Increase difficulty slightly over time
+            invaders.append(pygame.Rect(random.randint(0, SCREEN_WIDTH - 30), random.randint(50, 100), 30, 30))
             invader_speed += 0.01
 
         now = pygame.time.get_ticks() / 1000
         if shooting and now - last_shot_time >= BULLET_COOLDOWN:
             last_shot_time = now
-            bullet = pygame.Rect(player.centerx - 3, player.top - 10, 6, 10)
-            bullets.append(bullet)
+            bullets.append(pygame.Rect(player.centerx - 3, player.top - 10, 6, 10))
 
         for bullet in bullets[:]:
             bullet.y -= BULLET_SPEED
-            if bullet.bottom < 0:
-                bullets.remove(bullet)
-                continue
-
-            for barrier in barriers[:]:
-                if barrier.rect.colliderect(bullet):
-                    bullets.remove(bullet)
-                    if barrier.hit():
-                        barriers.remove(barrier)
-                    break
+            if bullet.bottom < 0: bullets.remove(bullet)
 
         edge_reached = False
         for inv in invaders:
@@ -380,8 +288,7 @@ def run_endless_mode():
                 edge_reached = True
         if edge_reached:
             invader_speed *= -1
-            for inv in invaders:
-                inv.y += 25
+            for inv in invaders: inv.y += 25
 
         for inv in invaders[:]:
             for bullet in bullets[:]:
@@ -390,6 +297,12 @@ def run_endless_mode():
                     invaders.remove(inv)
                     score += 10
                     break
+            for barrier in barriers[:]:
+                if inv.colliderect(barrier.rect):
+                    if barrier.hit():
+                        barriers.remove(barrier)
+                    invaders.remove(inv)
+                    break
             if inv.colliderect(player) or inv.bottom >= SCREEN_HEIGHT - 40:
                 lives -= 1
                 if lives <= 0:
@@ -397,60 +310,43 @@ def run_endless_mode():
                     return
 
         draw_player(screen, player)
-        for inv in invaders:
-            draw_invader(screen, inv)
-        for bullet in bullets:
-            pygame.draw.rect(screen, YELLOW, bullet)
-        for barrier in barriers:
-            barrier.draw(screen)
+        for inv in invaders: draw_invader(screen, inv)
+        for bullet in bullets: pygame.draw.rect(screen, YELLOW, bullet)
+        for barrier in barriers: barrier.draw(screen)
 
         hud = font.render(f"Endless Mode  Lives: {lives}  Score: {score}", True, WHITE)
         screen.blit(hud, (10, 10))
-
         pygame.display.flip()
 
-# ==== GAME OVER SCREEN ====
+# ==== GAME OVER ====
 def game_over_screen(score):
     while True:
         screen.fill(BLACK)
-        title = font.render("GAME OVER", True, RED)
-        score_text = font.render(f"Score: {score}", True, WHITE)
-        info = font.render("Press ESC to return to menu", True, WHITE)
-        screen.blit(title, title.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//3)))
-        screen.blit(score_text, score_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)))
-        screen.blit(info, info.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//1.5)))
+        screen.blit(font.render("GAME OVER", True, RED), (SCREEN_WIDTH//2 - 80, SCREEN_HEIGHT//3))
+        screen.blit(font.render(f"Score: {score}", True, WHITE), (SCREEN_WIDTH//2 - 80, SCREEN_HEIGHT//2))
+        screen.blit(font.render("Press ESC to return to menu", True, WHITE), (SCREEN_WIDTH//2 - 150, SCREEN_HEIGHT//1.5))
         pygame.display.flip()
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return
+            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE: return
 
-# ==== MAIN MENU LOOP ====
+# ==== MAIN MENU ====
 def main_menu():
     global unlocked_levels, level_scores
     buttons = build_level_buttons()
-
     while True:
         screen.fill(BLACK)
-        title = font.render("SPACE INVADERS", True, WHITE)
-        screen.blit(title, title.get_rect(center=(SCREEN_WIDTH//2, 100)))
-
+        screen.blit(font.render("SPACE INVADERS", True, WHITE), (SCREEN_WIDTH//2 - 100, 100))
         for btn in buttons:
             btn.draw(screen)
-            # Show high score if available for level buttons
             if "Level" in btn.text and btn.enabled:
                 level_num = int(btn.text.split()[1])
                 score = level_scores.get(str(level_num), 0)
                 if score > 0:
-                    score_text = font.render(f"High Score: {score}", True, WHITE)
-                    screen.blit(score_text, (btn.rect.left, btn.rect.bottom + 5))
+                    screen.blit(font.render(f"High Score: {score}", True, WHITE), (btn.rect.left, btn.rect.bottom + 5))
 
         pygame.display.flip()
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 save_progress(unlocked_levels, level_scores)
@@ -458,20 +354,17 @@ def main_menu():
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 pos = pygame.mouse.get_pos()
-                for i, btn in enumerate(buttons):
+                for btn in buttons:
                     if btn.is_clicked(pos):
                         if btn.text == "Endless Mode":
                             run_endless_mode()
                         else:
                             level_num = int(btn.text.split()[1])
                             run_level(level_num)
-                            # After finishing, update unlocked levels and score
                             if level_num == unlocked_levels and unlocked_levels < LEVELS:
                                 unlocked_levels += 1
-                            # Save progress with dummy score 0 (or could update actual score)
                             save_progress(unlocked_levels, level_scores)
 
 # ==== START GAME ====
 if __name__ == "__main__":
     main_menu()
-
